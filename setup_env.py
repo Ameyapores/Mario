@@ -1,4 +1,4 @@
-
+# this is for setting up new env
 import gym
 from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv, wrap as nes_py_wrap
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
