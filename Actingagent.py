@@ -111,7 +111,7 @@ while True:
             total_reward = eta * r_in[0]
         episode_reward += total_reward
         best_score = max(best_score, episode_reward)
-        agent.sars_data(action, total_reward, observation, done, mem_queue=25000)
+        agent.sars_data(action, total_reward, observation, done, mem_queue)
         op_last = action
         obs_last = observation
 
