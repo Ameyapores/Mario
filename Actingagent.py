@@ -1,9 +1,7 @@
 from setup_env import setup_env
 import numpy as np
 from collections import deque
-
 import argparse
-
 from model import build_network, build_icm_model, get_reward_intrinsic
 import h5py
 from replay_queue import ReplayQueue
