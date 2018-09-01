@@ -71,19 +71,7 @@ class ActingAgent(object):
         action = np.round(action)
         return action.astype(np.int32), np.argmax(action)
 
-import os
-output_dir: str =None
-
-output_dir = '{}/train'.format(output_dir)
-if not os.path.exists(output_dir):
-    os.makedirs(output_dir)
-
-print('writing results to {}'.format(repr(output_dir)))
-weights_file = '{}/weights.h5'.format(output_dir)
-env=setup_env('SuperMarioBros-v0')
-
 agent=ActingAgent(7, 5)
-
 frames=0
 best_score = 0
 avg_score = deque([0], maxlen=25)
