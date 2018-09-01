@@ -13,7 +13,7 @@ args = parser.parse_args()
 
 past_range=3
 class ActingAgent(object):
-    def __init__(self, num_action, Replay_memory_size: int=25000, n_step=8, discount=0.99):
+    def __init__(self, num_action, Replay_memory_size: int=1, n_step=2, discount=0.99):
         self.value_net, self.policy_net, self.load_net, _ = build_network(env.observation_space.shape, num_action)
         self.icm = build_icm_model((env.observation_space.shape[:2]), (num_action,))
 
@@ -34,7 +34,6 @@ class ActingAgent(object):
     def save_observation(self, observation):
         self.last_observations = self.observations[...]
         self.observations = np.roll(self.observations, -1, axis=0)
-        #self.observations[-input_depth:, ...] = transform_screen(observation)
 
     def init_episode(self, observation):
         for _ in range(past_range):
@@ -46,7 +45,6 @@ class ActingAgent(object):
     def sars_data(self, action, reward, observation, terminal):
         self.save_observation(observation)
         reward = np.clip(reward, -1., 1.)
-        # reward /= args.reward_scale
 
         self.n_step_data.appendleft([self.last_observations, action, reward])
 
@@ -68,7 +66,7 @@ class ActingAgent(object):
         return action.astype(np.int32), np.argmax(action)
 
 env=setup_env('SuperMarioBros-v0')
-agent=ActingAgent(7)
+agent=ActingAgent(env.action_space.n)
 
 frames=0
 best_score = 0
@@ -89,19 +87,18 @@ while True:
         action_list, action = agent.choose_action(eps = 1.0 / (frames / 10000.0 + 2.0))
         observation, reward, done, _ = env.step(action)
         env.render(mode='human')
-        #r_in = get_reward_intrinsic(agent.icm, [(obs_last[ ...,None]),(observation[ ...,None]), action_list])
+        r_in = get_reward_intrinsic(agent.icm, [(obs_last[None]),(observation[None]), np.array([action_list])])
 
-        #if args.with_reward:
-        total_reward = reward 
-        #else:
-        #    total_reward = eta * r_in[0]
+        if args.with_reward:
+            total_reward = reward + eta * r_in[0]
+        else:
+            total_reward = eta * r_in[0]
         episode_reward += total_reward
         best_score = max(best_score, episode_reward)
         agent.sars_data(action, total_reward, observation, done)
         op_last = action
         obs_last = observation
-
-env.close()
+    env.close()
     
 
 
