@@ -5,6 +5,7 @@ import argparse
 from model import build_network, build_icm_model, get_reward_intrinsic
 import h5py
 from replay_queue import ReplayQueue
+from scipy.misc import imresize
 
 parser = argparse.ArgumentParser(description='Training model')
 parser.add_argument('--with_reward', dest='with_reward', action='store_true')
@@ -13,7 +14,7 @@ args = parser.parse_args()
 past_range=3
 class ActingAgent(object):
     def __init__(self, num_action, Replay_memory_size: int=25000, n_step=8, discount=0.99):
-        self.value_net, self.policy_net, self.load_net, _ = build_network((past_range, *env.observation_space.shape[:2]), num_action)
+        self.value_net, self.policy_net, self.load_net, _ = build_network(env.observation_space.shape, num_action)
         self.icm = build_icm_model((env.observation_space.shape[:2]), (num_action,))
 
         self.value_net.compile(optimizer='rmsprop', loss='mse')
@@ -22,7 +23,7 @@ class ActingAgent(object):
         self.icm.compile(optimizer="rmsprop", loss=lambda y_true, y_pred: y_pred)
 
         self.num_action = num_action
-        self.observations = np.zeros((past_range, *env.observation_space.shape[:2]))
+        self.observations = np.zeros(env.observation_space.shape)
         self.last_observations = np.zeros_like(self.observations)
 
         self.n_step_data = deque(maxlen=n_step)
@@ -47,13 +48,10 @@ class ActingAgent(object):
         reward = np.clip(reward, -1., 1.)
         # reward /= args.reward_scale
 
-        self.n_step_data.appendleft([self.last_observations,
-                                     action, reward])
+        self.n_step_data.appendleft([self.last_observations, action, reward])
 
-        if terminal or len(self.n_step_data) >= self.n_step:
+        if len(self.n_step_data) >= self.n_step:
             r = 0.
-            if not terminal:
-                r = self.value_net.predict(self.observations[None, ...])[0]
             for i in range(len(self.n_step_data)):
                 r = self.n_step_data[i][2] + self.discount * r
                 self.queue.push(self.n_step_data[i][0], self.n_step_data[i][1], r)
@@ -63,7 +61,7 @@ class ActingAgent(object):
         if np.random.rand(1) < eps:
             action = np.random.rand(self.num_action)
         elif observation is None:
-            action = self.policy_net.predict(self.observations[None, ...])[0]
+            action = self.policy_net.predict(self.observations[None])[0]
         else:
             action = self.policy_net.predict([observation])[0]
         action = np.round(action)
@@ -91,7 +89,7 @@ while True:
         action_list, action = agent.choose_action(eps = 1.0 / (frames / 10000.0 + 2.0))
         observation, reward, done, _ = env.step(action)
         env.render(mode='human')
-        #r_in = get_reward_intrinsic(agent.icm, [(obs_last), (observation_out.T), action_list])
+        #r_in = get_reward_intrinsic(agent.icm, [(obs_last[ ...,None]),(observation[ ...,None]), action_list])
 
         #if args.with_reward:
         total_reward = reward 
