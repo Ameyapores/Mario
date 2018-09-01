@@ -8,13 +8,11 @@ from replay_queue import ReplayQueue
 
 parser = argparse.ArgumentParser(description='Training model')
 parser.add_argument('--with_reward', dest='with_reward', action='store_true')
-parser.add_argument('--queue_size', default=25600, help='Size of queue holding agent experience', dest='queue_size',
-                    type=int)
 args = parser.parse_args()
 
 past_range=3
 class ActingAgent(object):
-    def __init__(self, num_action, mem_queue, n_step=8, discount=0.99):
+    def __init__(self, num_action, Replay_memory_size: int=25000, n_step=8, discount=0.99):
         self.value_net, self.policy_net, self.load_net, _ = build_network((past_range, *env.observation_space.shape[:2]), num_action)
         self.icm = build_icm_model((env.observation_space.shape[:2]), (num_action,))
 
@@ -30,7 +28,7 @@ class ActingAgent(object):
         self.n_step_data = deque(maxlen=n_step)
         self.n_step = n_step
         self.discount = discount
-        self.mem_queue=ReplayQueue(args.queue_size)
+        self.queue= ReplayQueue(Replay_memory_size)
 
     def save_observation(self, observation):
         self.last_observations = self.observations[...]
@@ -38,13 +36,13 @@ class ActingAgent(object):
         #self.observations[-input_depth:, ...] = transform_screen(observation)
 
     def init_episode(self, observation):
-        for _ in range(env.observation_space.shape[-1]):
+        for _ in range(past_range):
             self.save_observation(observation)
 
     def reset(self):
         self.n_step_data.clear()
 
-    def sars_data(self, action, reward, observation, terminal, mem_queue):
+    def sars_data(self, action, reward, observation, terminal):
         self.save_observation(observation)
         reward = np.clip(reward, -1., 1.)
         # reward /= args.reward_scale
@@ -58,7 +56,7 @@ class ActingAgent(object):
                 r = self.value_net.predict(self.observations[None, ...])[0]
             for i in range(len(self.n_step_data)):
                 r = self.n_step_data[i][2] + self.discount * r
-                mem_queue.push((self.n_step_data[i][0], self.n_step_data[i][1], r))
+                self.queue.push(self.n_step_data[i][0], self.n_step_data[i][1], r)
             self.reset()
 
     def choose_action(self, observation=None, eps=0.1):
@@ -71,7 +69,9 @@ class ActingAgent(object):
         action = np.round(action)
         return action.astype(np.int32), np.argmax(action)
 
-agent=ActingAgent(7, 5)
+env=setup_env('SuperMarioBros-v0')
+agent=ActingAgent(7)
+
 frames=0
 best_score = 0
 avg_score = deque([0], maxlen=25)
@@ -91,15 +91,15 @@ while True:
         action_list, action = agent.choose_action(eps = 1.0 / (frames / 10000.0 + 2.0))
         observation, reward, done, _ = env.step(action)
         env.render(mode='human')
-        r_in = get_reward_intrinsic(agent.icm, [(obs_last[:83,:83]), (observation[:83,:83]), action_list])
+        #r_in = get_reward_intrinsic(agent.icm, [(obs_last), (observation_out.T), action_list])
 
-        if args.with_reward:
-            total_reward = reward + eta * r_in[0]
-        else:
-            total_reward = eta * r_in[0]
+        #if args.with_reward:
+        total_reward = reward 
+        #else:
+        #    total_reward = eta * r_in[0]
         episode_reward += total_reward
         best_score = max(best_score, episode_reward)
-        agent.sars_data(action, total_reward, observation, done, mem_queue)
+        agent.sars_data(action, total_reward, observation, done)
         op_last = action
         obs_last = observation
 
