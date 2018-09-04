@@ -21,11 +21,11 @@ def build_network(input_shape, output_shape):
     #policy = LSTM(output_shape, activation='sigmoid', name='policy')(h)
     policy = Dense(output_shape, activation='sigmoid', name='policy')(h)
     
-    value_network = Model(input=state, output=value)
-    policy_network = Model(input=state, output=policy)
+    value_network = Model(inputs= state, outputs= value)
+    policy_network = Model(inputs= state, outputs= policy)
 
     advantage = Input(shape=(1,))
-    train_network = Model(input=[state, advantage], output=[value, policy])
+    train_network = Model(inputs=[state, advantage], outputs=[value, policy])
 
     return value_network, policy_network, train_network, advantage
 
@@ -68,7 +68,6 @@ def forward_model(output_dim=288):
 
 def build_icm_model(observation_shape, action_shape, lmd=1.0, beta=0.01):
     s_t0 = Input(shape=observation_shape, name="state0")
-    print (s_t0)
     s_t1 = Input(shape=observation_shape, name="state1")
     a_t = Input(shape=action_shape, name="action")
     
@@ -96,5 +95,4 @@ def get_reward_intrinsic(model, x):
 if __name__ == "__main__":
     from setup_env import setup_env
     env= setup_env('SuperMarioBros-v0')
-    icm= build_icm_model((env.observation_space.shape[:2]), (env.action_space.n,))
-    icm.summary()
+    icm = build_network((env.observation_space.shape),7)
