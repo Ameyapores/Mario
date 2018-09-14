@@ -8,6 +8,8 @@ from scipy.signal import lfilter
 import torch.multiprocessing as mp
 import numpy as np
 os.environ['OMP_NUM_THREADS'] = '1'
+from mario_icm import ActorCritic
+from torch.autograd import Variable
 
 def get_args():
     parser = argparse.ArgumentParser(description=None)
@@ -22,6 +24,12 @@ def get_args():
     parser.add_argument('--tau', default=1.0, type=float, help='generalized advantage estimation discount')
     parser.add_argument('--horizon', default=0.99, type=float, help='horizon for running averages')
     parser.add_argument('--hidden', default=256, type=int, help='hidden size of GRU')
+    parser.add_argument('--eta', type=float, default=0.01, metavar='LR',
+                    help='scaling factor for intrinsic reward')
+    parser.add_argument('--beta', type=float, default=0.2, metavar='LR',
+                    help='balance between inverse & forward')
+    parser.add_argument('--lmbda', type=float, default=0.1, metavar='LR',
+                    help='lambda : balance between A3C & icm')
     return parser.parse_args()
 
 discount = lambda x, gamma: lfilter([1],[1,-gamma],x[::-1])[::-1] # discounted rewards one liner
@@ -29,34 +37,6 @@ prepro = lambda img: imresize(img[35:195].mean(2), (84,84)).astype(np.float32).r
 
 def printlog(args, s, end='\n', mode='a'):
     print(s, end=end) ; f=open(args.save_dir+'log.txt',mode) ; f.write(s+'\n') ; f.close()
-
-class NNPolicy(nn.Module): # an actor-critic neural network
-    def __init__(self, channels, memsize, num_actions):
-        super(NNPolicy, self).__init__()
-        self.conv1 = nn.Conv2d(channels, 32, 3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.conv4 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.gru = nn.GRUCell(1152, memsize)
-        self.critic_linear, self.actor_linear = nn.Linear(memsize, 1), nn.Linear(memsize, num_actions)
-
-    def forward(self, inputs, train=True, hard=False):
-        inputs, hx = inputs
-        x = F.elu(self.conv1(inputs))
-        x = F.elu(self.conv2(x))
-        x = F.elu(self.conv3(x))
-        x = F.elu(self.conv4(x))
-        hx = self.gru(x.view(-1, 1152), (hx))
-        return self.critic_linear(hx), self.actor_linear(hx), hx
-
-    def try_load(self, save_dir):
-        paths = glob.glob(save_dir + '*.tar') ; step = 0
-        if len(paths) > 0:
-            ckpts = [int(s.split('.')[-2]) for s in paths]
-            ix = np.argmax(ckpts) ; step = ckpts[ix]
-            self.load_state_dict(torch.load(paths[ix]))
-        print("\tno saved models") if step is 0 else print("\tloaded model: {}".format(paths[ix]))
-        return step
 
 class SharedAdam(torch.optim.Adam): # extend a pytorch optimizer so it shares grads across processes
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0):
@@ -76,12 +56,12 @@ class SharedAdam(torch.optim.Adam): # extend a pytorch optimizer so it shares gr
                     self.state[p]['step'] = self.state[p]['shared_steps'][0] - 1 # a "step += 1"  comes later
             super.step(closure)
 
-def cost_func(args, values, logps, actions, rewards):
+def cost_func(args, values, logps, actions, rewards, inverses, forwards, vec_st1s):
     np_values = values.view(-1).data.numpy()
 
     # generalized advantage estimation using \delta_t residuals (a policy gradient method)
     delta_t = np.asarray(rewards) + args.gamma * np_values[1:] - np_values[:-1]
-    logpys = logps.gather(1, torch.tensor(actions).view(-1,1))
+    logpys = logps.gather(1, (actions).view(-1,1))
     gen_adv_est = discount(delta_t, args.gamma * args.tau)
     policy_loss = -(logpys.view(-1) * torch.FloatTensor(gen_adv_est.copy())).sum()
     
@@ -91,13 +71,18 @@ def cost_func(args, values, logps, actions, rewards):
     discounted_r = torch.tensor(discounted_r.copy(), dtype=torch.float32)
     value_loss = .5 * (discounted_r - values[:-1,0]).pow(2).sum()
 
-    entropy_loss = -(-logps * torch.exp(logps)).sum() # encourage lower entropy
-    return policy_loss + 0.5 * value_loss + 0.01 * entropy_loss
+    #entropy_loss = -(-logps * torch.exp(logps)).sum() # encourage lower entropy
+    cross_entropy=-(np.asarray(actions)* torch.log(np.asarray(inverses)+1e-15)).sum()
+    inverse_loss= cross_entropy
+    forward_err= np.asarray(forwards) - np.asarray(vec_st1s)
+    forward_loss= 0.5* (forward_err.pow(2)).sum()
+    return (((1- args.beta) * inverse_loss + args.beta * forward_loss )+ args.lmbda * (policy_loss + 0.5 * value_loss)).backward
 
 def train(shared_model, shared_optimizer, rank, args, info):
     env = setup_env(args.env) # make a local (unshared) environment
     #env.seed(args.seed + rank) ; torch.manual_seed(args.seed + rank) # seed everything
-    model = NNPolicy(channels=1, memsize=args.hidden, num_actions=args.num_actions) # a local/unshared model
+    num_outputs= env.action_space.n
+    model = ActorCritic(num_inputs=1, action_space= env.action_space) # a local/unshared model
     state = torch.tensor(prepro(env.reset())) # get first state
 
     start_time = last_disp_time = time.time()
@@ -105,23 +90,44 @@ def train(shared_model, shared_optimizer, rank, args, info):
 
     while info['frames'][0] <= 4e7 or args.test: # openai baselines uses 40M frames...we'll use 80M
         model.load_state_dict(shared_model.state_dict()) # sync with shared model
-
-        hx = torch.zeros(1, 256) if done else hx.detach()  # rnn activation vector
-        values, logps, actions, rewards = [], [], [], [] # save values for computing gradientss
+        if done:
+            #cx = torch.zeros(1, 256)
+            hx = torch.zeros(1, 256)
+        else:
+            #cx.detach()
+            hx.detach()
+        #hx = torch.zeros(1, 256) if done else hx.detach()  # rnn activation vector
+        values, logps, rewards = [], [], [] # save values for computing gradientss
+        inverses, forwards, actions, vec_st1s = [], [], [], []
 
         for step in range(args.rnn_steps):
             episode_length += 1
-            value, logit, hx = model((state.view(1,1,84,84), hx))
+            value, logit, (hx) = model((Variable(state.unsqueeze(0)), (hx)), icm= False)
+            #prob = F.softmax(logit)
             logp = F.log_softmax(logit, dim=-1)
+            
+            s_t= state
 
-            action = torch.exp(logp).multinomial(num_samples=1).data[0]#logp.max(1)[1].data if args.test else
-            state, reward, done, _ = env.step(action.numpy()[0])
+            action = torch.exp(logp).multinomial(num_samples=1).data #logp.max(1)[1].data if args.test else
+            oh_action = torch.Tensor(1, num_outputs)
+            oh_action.zero_()
+            oh_action.scatter_(1,action,1)
+            oh_action = Variable(oh_action)
+            a_t = action
+            
+            state, reward, done, _ = env.step(action.numpy()[0][0])
             if args.render: env.render()
 
             state = torch.tensor(prepro(state)) ; epr += reward
             reward = np.clip(reward, -1, 1) # reward
+            s_t1=state
             done = done or episode_length >= 1e4 # don't playing one ep for too long
-            
+            ######
+            vec_st1, inverse, forward = model(((s_t.view(1,1,84,84)), (s_t1.view(1,1,84,84)), a_t), icm = True) 
+            reward_intrinsic = args.eta * ((vec_st1 - forward).pow(2)).sum(1) / 2.
+            reward_intrinsic = reward_intrinsic.data.numpy()
+            reward += reward_intrinsic
+            ######
             info['frames'].add_(1) ; num_frames = int(info['frames'].item())
             if num_frames % 2e6 == 0: # save every 2M frames
                 printlog(args, '\n\t{:.0f}M frames: saved model\n'.format(num_frames/1e6))
@@ -143,13 +149,12 @@ def train(shared_model, shared_optimizer, rank, args, info):
             if done: # maybe print info.
                 episode_length, epr, eploss = 0, 0, 0
                 state = torch.tensor(prepro(env.reset()))
+            values.append(value) ; logps.append(logp) ; actions.append(oh_action) ; rewards.append(reward) ; vec_st1s.append(vec_st1) ; inverses.append(inverse); forwards.append(forward)
 
-            values.append(value) ; logps.append(logp) ; actions.append(action) ; rewards.append(reward)
-
-        next_value = torch.zeros(1,1) if done else model((state.unsqueeze(0), hx))[0]
+        next_value = torch.zeros(1,1) if done else model((state.unsqueeze(0), (hx)), icm= False)[0]
         values.append(next_value.detach())
 
-        loss = cost_func(args, torch.cat(values), torch.cat(logps), torch.cat(actions), np.asarray(rewards))
+        loss = cost_func(args, torch.cat(values), torch.cat(logps), torch.cat(actions), np.asarray(rewards), torch.cat(inverses), torch.cat(forwards), torch.cat(vec_st1s))
         eploss += loss.item()
         shared_optimizer.zero_grad() ; loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 40)
@@ -168,11 +173,11 @@ if __name__ == "__main__":
     args.save_dir = '{}/'.format(args.env.lower()) # keep the directory structure simple
     if args.render:  args.processes = 1 ; args.test = True # render mode -> test mode w one process
     if args.test:  args.lr = 0 # don't train in render mode
-    args.num_actions = setup_env(args.env).action_space.n # get the action space of this game
+    args.num_actions = setup_env(args.env).action_space # get the action space of this game
     os.makedirs(args.save_dir) if not os.path.exists(args.save_dir) else None # make dir to save models etc.
 
     #torch.manual_seed(args.seed)
-    shared_model = NNPolicy(channels=1, memsize=args.hidden, num_actions=args.num_actions).share_memory()
+    shared_model = ActorCritic(num_inputs=1, action_space =args.num_actions).share_memory()
     shared_optimizer = SharedAdam(shared_model.parameters(), lr=args.lr)
 
     info = {k: torch.DoubleTensor([0]).share_memory_() for k in ['run_epr', 'run_loss', 'episodes', 'frames']}
