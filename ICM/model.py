@@ -4,6 +4,27 @@ import torch.nn.functional as F
 import glob
 import numpy as np
 
+def normalized_columns_initializer(weights, std=1.0):
+    out = torch.randn(weights.size())
+    out *= std / torch.sqrt(out.pow(2).sum(1, keepdim=True))
+    return out
+
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        weight_shape = list(m.weight.data.size())
+        fan_in = np.prod(weight_shape[1:4])
+        fan_out = np.prod(weight_shape[2:4]) * weight_shape[0]
+        w_bound = np.sqrt(6. / (fan_in + fan_out))
+        m.weight.data.uniform_(-w_bound, w_bound)
+        m.bias.data.fill_(0)
+    elif classname.find('Linear') != -1:
+        weight_shape = list(m.weight.data.size())
+        fan_in = weight_shape[1]
+        fan_out = weight_shape[0]
+        w_bound = np.sqrt(6. / (fan_in + fan_out))
+        m.weight.data.uniform_(-w_bound, w_bound)
+        m.bias.data.fill_(0)
 
 class ActorCritic(torch.nn.Module):
     
@@ -14,11 +35,11 @@ class ActorCritic(torch.nn.Module):
         self.conv3 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
         self.conv4 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
 
-        self.lstm = nn.LSTMCell(1152, 256)
+        self.lstm = nn.LSTMCell(1152, 512)
 
         num_outputs = action_space.n
-        self.critic_linear = nn.Linear(256, 1)
-        self.actor_linear = nn.Linear(256, num_outputs)
+        self.critic_linear = nn.Linear(512, 1)
+        self.actor_linear = nn.Linear(512, num_outputs)
 
         ################################################################
         self.icm_conv1 = nn.Conv2d(num_inputs, 32, 3, stride=2, padding=1)
@@ -28,11 +49,38 @@ class ActorCritic(torch.nn.Module):
 
         #self.icm_lstm = nn.LSTMCell(32 * 3 * 3, 256)
 
-        self.inverse_linear1 = nn.Linear(2304, 256)
-        self.inverse_linear2 = nn.Linear(256, num_outputs)
+        self.inverse_linear1 = nn.Linear(2304, 512)
+        self.inverse_linear2 = nn.Linear(512, num_outputs)
 
-        self.forward_linear1 = nn.Linear(1152 + num_outputs, 256)
-        self.forward_linear2 = nn.Linear(256, 1152)
+        self.forward_linear1 = nn.Linear(1152 + num_outputs, 512)
+        self.forward_linear2 = nn.Linear(512, 1152)
+
+        self.apply(weights_init)
+        self.actor_linear.weight.data = normalized_columns_initializer(
+            self.actor_linear.weight.data, 0.01)
+        self.actor_linear.bias.data.fill_(0)
+        self.critic_linear.weight.data = normalized_columns_initializer(
+            self.critic_linear.weight.data, 1.0)
+        self.critic_linear.bias.data.fill_(0)
+
+        self.lstm.bias_ih.data.fill_(0)
+        self.lstm.bias_hh.data.fill_(0)
+
+        self.inverse_linear1.weight.data = normalized_columns_initializer(
+            self.inverse_linear1.weight.data, 0.01)
+        self.inverse_linear1.bias.data.fill_(0)
+        self.inverse_linear2.weight.data = normalized_columns_initializer(
+            self.inverse_linear2.weight.data, 1.0)
+        self.inverse_linear2.bias.data.fill_(0)
+        
+        self.forward_linear1.weight.data = normalized_columns_initializer(
+            self.forward_linear1.weight.data, 0.01)
+        self.forward_linear1.bias.data.fill_(0)
+        self.forward_linear2.weight.data = normalized_columns_initializer(
+            self.forward_linear2.weight.data, 1.0)
+        self.forward_linear2.bias.data.fill_(0)
+        
+        self.train
 
 
     def forward(self, inputs, icm):
@@ -97,4 +145,5 @@ class ActorCritic(torch.nn.Module):
             self.load_state_dict(torch.load(paths[ix]))
         print("\tno saved models") if step is 0 else print("\tloaded model: {}".format(paths[ix]))
         return step
+
 
