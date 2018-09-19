@@ -8,8 +8,8 @@ def setup_env(env_id: str) -> gym.Env:
     env = gym_super_mario_bros.make(env_id)
     env = BinarySpaceToDiscreteSpaceEnv(env, SIMPLE_MOVEMENT)
     #print(env.observation_space, env.action_space)
-    env = nes_py_wrap(env, agent_history_length = 4)
-    a= (env.observation_space.shape)
+    env = nes_py_wrap(env, death_penalty= -1, agent_history_length = 1)
+    #a= (env.observation_space.shape)
     #print(a)
     return env
     
@@ -18,3 +18,4 @@ def setup_env(env_id: str) -> gym.Env:
 __all__ = [setup_env.__name__]
 
 x=setup_env('SuperMarioBros-v0')
+
