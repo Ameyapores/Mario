@@ -4,7 +4,7 @@ import os
 import time
 from collections import deque
 import csv
-
+from scipy.misc import imresize
 import numpy as np
 import cv2
 from itertools import count
@@ -21,10 +21,10 @@ def ensure_shared_grads(model, shared_model):
             return
         shared_param._grad = param.grad
 
-prepro = lambda img: imresize(img[35:195].mean(2), (84,84)).astype(np.float32).reshape(1,84,84)/255.
+prepro = lambda img: imresize(img[0:84].mean(2), (84,84)).astype(np.float32).reshape(1,84,84)/255.
 
 def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample=True):
-    torch.manual_seed(args.seed + rank)
+    #torch.manual_seed(args.seed + rank)
     print("Process No : {} | Sampling : {}".format(rank, select_sample))
 
     FloatTensor = torch.cuda.FloatTensor if args.use_cuda else torch.FloatTensor
@@ -32,7 +32,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
     ByteTensor = torch.cuda.ByteTensor if args.use_cuda else torch.ByteTensor
 
     env = setup_env(args.env_name)
-    env.seed(args.seed + rank)
+    #env.seed(args.seed + rank)
 
     model = ActorCritic(1, env.action_space.n)
 
@@ -52,7 +52,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
     for num_iter in count():
 
         if rank == 0:
-            env.render()
+            #env.render()
 
             if num_iter % args.save_interval == 0 and num_iter > 0:
                 print ("Saving model at :" + args.save_path)            
@@ -85,7 +85,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             entropies.append(entropy)
             
             if select_sample:
-                action = prob.multinomial().data
+                action = prob.multinomial(num_samples=1).data
             else:
                 action = prob.max(-1, keepdim=True)[1].data
 
@@ -102,12 +102,12 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
 
             if done:
                 episode_length = 0
-                env.change_level(0)
-                state = prepro(env.reset())
+                #env.change_level(0)
+                state = torch.from_numpy(prepro(env.reset()))
                 print ("Process {} has completed.".format(rank))
             
             env.locked_levels = [False] + [True] * 31
-            state = torch.from_numpy(state)
+            state = torch.from_numpy(prepro(state))
             values.append(value)
             log_probs.append(log_prob)
             rewards.append(reward)
@@ -144,22 +144,22 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
 
         optimizer.zero_grad()
 
-        (total_loss).backward()
-        torch.nn.utils.clip_grad_norm(model.parameters(), args.max_grad_norm)
+        (total_loss).backward(retain_graph=True)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
         ensure_shared_grads(model, shared_model)
         optimizer.step()
     print ("Process {} closed.".format(rank))
 
 def test(rank, args, shared_model, counter):
-    torch.manual_seed(args.seed + rank)
+    #torch.manual_seed(args.seed + rank)
 
     FloatTensor = torch.cuda.FloatTensor if args.use_cuda else torch.FloatTensor
     DoubleTensor = torch.cuda.DoubleTensor if args.use_cuda else torch.DoubleTensor
     ByteTensor = torch.cuda.ByteTensor if args.use_cuda else torch.ByteTensor
 
     env = setup_env(args.env_name)
-    env.seed(args.seed + rank)
+    #env.seed(args.seed + rank)
 
     model = ActorCritic(1, env.action_space.n)
     if args.use_cuda:
@@ -230,4 +230,4 @@ def test(rank, args, shared_model, counter):
             env.locked_levels = [False] + [True] * 31
             env.change_level(0)
             state = prepro(env.reset())
-        state = torch.from_numpy(state)
+        state = torch.from_numpy(prepro(state))

@@ -28,7 +28,7 @@ parser.add_argument('--max-grad-norm', type=float, default=250,
                     help='value loss coefficient (default: 50)')
 parser.add_argument('--seed', type=int, default=1,
                     help='random seed (default: 4)')
-parser.add_argument('--num-processes', type=int, default=4,
+parser.add_argument('--num-processes', type=int, default=20,
                     help='how many training processes to use (default: 4)')
 parser.add_argument('--num-steps', type=int, default=50,
                     help='number of forward steps in A3C (default: 50)')
@@ -67,7 +67,7 @@ if __name__ == '__main__':
         print('Loading A3C parametets ...')
         shared_model.load_state_dict(torch.load(args.save_path))
 
-    torch.manual_seed(args.seed)
+    #torch.manual_seed(args.seed)
 
     optimizer = SharedAdam(shared_model.parameters(), lr=args.lr)
     optimizer.share_memory()
