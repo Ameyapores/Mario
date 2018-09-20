@@ -25,7 +25,7 @@ prepro = lambda img: imresize(img[0:84].mean(2), (84,84)).astype(np.float32).res
 
 def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample=True):
     #torch.manual_seed(args.seed + rank)
-    print("Process No : {} | Sampling : {}".format(rank, select_sample))
+    #print("Process No : {} | Sampling : {}".format(rank, select_sample))
 
     FloatTensor = torch.cuda.FloatTensor if args.use_cuda else torch.FloatTensor
     DoubleTensor = torch.cuda.DoubleTensor if args.use_cuda else torch.DoubleTensor
@@ -55,11 +55,11 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             #env.render()
 
             if num_iter % args.save_interval == 0 and num_iter > 0:
-                print ("Saving model at :" + args.save_path)            
+                #print ("Saving model at :" + args.save_path)            
                 torch.save(shared_model.state_dict(), args.save_path)
 
         if num_iter % (args.save_interval * 2.5) == 0 and num_iter > 0 and rank == 1:    # Second saver in-case first processes crashes 
-            print ("Saving model for process 1 at :" + args.save_path)            
+            #print ("Saving model for process 1 at :" + args.save_path)            
             torch.save(shared_model.state_dict(), args.save_path)
         
         model.load_state_dict(shared_model.state_dict())
@@ -74,7 +74,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
         log_probs = []
         rewards = []
         entropies = []
-        reason =''
+        
         for step in range(args.num_steps):
             episode_length += 1            
             state_inp = Variable(state.unsqueeze(0)).type(FloatTensor)
@@ -104,7 +104,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
                 episode_length = 0
                 #env.change_level(0)
                 state = torch.from_numpy(prepro(env.reset()))
-                print ("Process {} has completed.".format(rank))
+                #print ("Process {} has completed.".format(rank))
             
             env.locked_levels = [False] + [True] * 31
             state = torch.from_numpy(prepro(state))
@@ -140,7 +140,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
                 log_probs[i] * Variable(gae).type(FloatTensor) - args.entropy_coef * entropies[i]
 
         total_loss = policy_loss + args.value_loss_coef * value_loss
-        print ("Process {} loss :".format(rank), total_loss.data)
+        #print ("Process {} loss :".format(rank), total_loss.data)
 
         optimizer.zero_grad()
 
@@ -228,6 +228,6 @@ def test(rank, args, shared_model, counter):
             actions.clear()
             time.sleep(60)
             env.locked_levels = [False] + [True] * 31
-            env.change_level(0)
+            #env.change_level(0)
             state = prepro(env.reset())
         state = torch.from_numpy(prepro(state))
