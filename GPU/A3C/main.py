@@ -28,19 +28,19 @@ parser.add_argument('--max-grad-norm', type=float, default=250,
                     help='value loss coefficient (default: 50)')
 parser.add_argument('--seed', type=int, default=1,
                     help='random seed (default: 4)')
-parser.add_argument('--num-processes', type=int, default=20,
+parser.add_argument('--num-processes', type=int, default=1,
                     help='how many training processes to use (default: 4)')
 parser.add_argument('--num-steps', type=int, default=50,
                     help='number of forward steps in A3C (default: 50)')
-parser.add_argument('--max-episode-length', type=int, default=1000000,
+parser.add_argument('--max-episode-length', type=int, default=10000,
                     help='maximum length of an episode (default: 1000000)')
-parser.add_argument('--env-name', default='SuperMarioBros-v0',
-                    help='environment to train on (default: SuperMarioBros-1-1-v0)')
+parser.add_argument('--env-name', default='SuperMarioBros-1-4-v0',
+                    help='environment to train on (default: SuperMarioBros-1-4-v0)')
 parser.add_argument('--no-shared', default=False,
                     help='use an optimizer without shared momentum.')
 parser.add_argument('--use-cuda',default=True,
                     help='run on gpu.')
-parser.add_argument('--save-interval', type=int, default=10,
+parser.add_argument('--save-interval', type=int, default=100,
                     help='model save interval (default: 10)')
 parser.add_argument('--save-path',default=SAVEPATH,
                     help='model save interval (default: {})'.format(SAVEPATH))
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     shared_model.share_memory()
 
     if os.path.isfile(args.save_path):
-        print('Loading A3C parametets ...')
+        #print('Loading A3C parametets ...')
         shared_model.load_state_dict(torch.load(args.save_path))
 
     #torch.manual_seed(args.seed)
@@ -101,4 +101,3 @@ if __name__ == '__main__':
         processes.append(p)
     for p in processes:
         p.join()
-
