@@ -13,7 +13,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-
+from action import ACTIONS
 
 
 def ensure_shared_grads(model, shared_model):
@@ -86,18 +86,22 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             entropies.append(entropy)
 
             action = prob.max(-1, keepdim=True)[1].data
+            
             log_prob = log_prob.gather(-1, Variable(action))
+            
             action_out = action.to(torch.device("cpu"))
-
+            out = action[0][0]
+            action_out1 = torch.from_numpy(ACTIONS[out])
+            action_out1 = torch.unsqueeze(action_out1, 0)
+            
             state, reward, done, _ = env.step(action_out.numpy()[0][0])
             done = done or episode_length >= args.max_episode_length
             reward = max(min(reward, 1), -1)
 
-            oh_action = torch.Tensor(1, env.action_space.n).type(FloatTensor)
-            oh_action.zero_()
-            oh_action.scatter_(1,action_out,1)
-            oh_action = Variable(oh_action)
-            a_t = oh_action
+            a_t =action_out1
+            a_t= a_t.type(FloatTensor)
+            #print (a_t)
+            
             actions.append(a_t)
             state = torch.tensor(prepro(state))
             s_t1 = state
@@ -110,7 +114,8 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
                 ),
                 icm = True
             )            
-
+            inverse = inverse.type(FloatTensor)
+            #print (inverse)
             reward_intrinsic = args.eta * ((vec_st1 - forward).pow(2)).sum(1) / 2.
             reward_intrinsic = reward_intrinsic.to(torch.device("cpu"))
             reward_intrinsic = reward_intrinsic.data.numpy()[0]
@@ -129,6 +134,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             values.append(value)
             log_probs.append(log_prob)
             rewards.append(reward)
+            
             inverses.append(inverse)
             forwards.append(forward)
             vec_st1s.append(vec_st1)
@@ -168,6 +174,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
                 forward_loss = forward_loss + 0.5 * (forward_err.pow(2)).sum(1)
                 cross_entropy = - (actions[i] * torch.log(inverses[i] + 1e-15)).sum(1)
                 inverse_loss = inverse_loss + cross_entropy
+                inverse_loss = inverse_loss.type(FloatTensor)
 
                 optimizer.zero_grad()
                 ((1-args.beta) * inverse_loss + args.beta * forward_loss).backward(retain_graph=True)
