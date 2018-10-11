@@ -88,21 +88,25 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
 
             log_prob = log_prob.gather(-1, Variable(action))
             action_out = action.to(torch.device("cpu"))
+            
+            
             oh_action = torch.Tensor(1, env.action_space.n).type(torch.cuda.LongTensor)
             oh_action.zero_()
             oh_action.scatter_(1,action,1)
             a_t = oh_action.type(FloatTensor)
+            #print (a_t)
             #actions.append(oh_action)
-
+            
 
             '''
             out = action_out[0][0]
             action_out1 = torch.from_numpy(ACTIONS[out])
-            action_out1 = torch.unsqueeze(action_out1, 0)'''
-
+            action_out1 = torch.unsqueeze(action_out1, 0)
+            '''
             state, reward, done, _ = env.step(action_out.numpy()[0][0])
             done = done or episode_length >= args.max_episode_length
             reward = max(min(reward, 1), -1)
+            #print ('extrinsic reward', reward)
 
             #a_t =action_out1.type(FloatTensor)
             #actions.append(a_t)
@@ -111,20 +115,20 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             inp2= (Variable(s_t.unsqueeze(0)).type(FloatTensor), Variable(s_t1.unsqueeze(0)).type(FloatTensor), a_t)
 
             vec_st1, inverse, forward = model(inp2, True)
-            reward_intrinsic = args.eta * ((vec_st1 - forward).pow(2)).sum(1) / 2.
+            reward_intrinsic = ((vec_st1 - forward).pow(2)).sum(1) / 2.
             reward_intrinsic = reward_intrinsic.to(torch.device("cpu"))
+            #print('intrinsic reward', reward_intrinsic)
             reward += reward_intrinsic
-
+            #print('total_reward', reward)
+            
             with lock:
                 counter.value += 1
 
             if done:
                 episode_length = 0
-                #env.change_level(0)
                 state = torch.from_numpy(prepro(env.reset()))
                 #print ("Process {} has completed.".format(rank))
             
-            env.locked_levels = [False] + [True] * 31
             state = torch.from_numpy(prepro(state))
             values.append(value)
             log_probs.append(log_prob)
@@ -161,17 +165,17 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
 
             policy_loss = policy_loss - \
                 log_probs[i] * Variable(gae).type(FloatTensor) - args.entropy_coef * entropies[i]
-
+            
             forward_err = forwards[i] - vec_st1s[i]
             forward_loss = forward_loss + 0.5 * (forward_err.pow(2)).sum(1)
-
+            
         #total_loss = policy_loss + args.value_loss_coef * value_loss +
         #print ("Process {} loss :".format(rank), total_loss.data)
 
         optimizer.zero_grad()
 
-        (args.beta * forward_loss).backward(retain_graph=True)
-        (args.lmbda * (policy_loss + 0.5 * value_loss)).backward()
+        (forward_loss).backward(retain_graph=True)
+        (args.lmbda*(policy_loss + 0.5 * value_loss)).backward()
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
@@ -253,7 +257,6 @@ def test(rank, args, shared_model, counter):
             episode_length = 0
             actions.clear()
             time.sleep(60)
-            env.locked_levels = [False] + [True] * 31
             #env.change_level(0)
             state = prepro(env.reset())
         state = torch.from_numpy(prepro(state))
