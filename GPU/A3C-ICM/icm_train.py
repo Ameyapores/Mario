@@ -90,15 +90,16 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             log_prob = log_prob.gather(-1, Variable(action))
             
             action_out = action.to(torch.device("cpu"))
-            out = action[0][0]
-            action_out1 = torch.from_numpy(ACTIONS[out])
-            action_out1 = torch.unsqueeze(action_out1, 0)
+            
+            oh_action = torch.Tensor(1, env.action_space.n).type(torch.cuda.LongTensor)
+            oh_action.zero_()
+            oh_action.scatter_(1,action_out,1)
+            a_t = oh_action.type(FloatTensor)
             
             state, reward, done, _ = env.step(action_out.numpy()[0][0])
             done = done or episode_length >= args.max_episode_length
             reward = max(min(reward, 1), -1)
-
-            a_t =action_out1
+            
             a_t= a_t.type(FloatTensor)
             #print (a_t)
             
@@ -126,10 +127,9 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
 
             if done:
                 episode_length = 0
-                #env.change_level(0)
                 state = torch.from_numpy(prepro(env.reset()))
             
-            env.locked_levels = [False] + [True] * 31
+            
             state = torch.from_numpy(prepro(state))
             values.append(value)
             log_probs.append(log_prob)
@@ -190,11 +190,9 @@ def test(rank, args, shared_model, counter):
     #torch.manual_seed(args.seed + rank)
 
     FloatTensor = torch.cuda.FloatTensor if args.use_cuda else torch.FloatTensor
-    DoubleTensor = torch.cuda.DoubleTensor if args.use_cuda else torch.DoubleTensor
-    ByteTensor = torch.cuda.ByteTensor if args.use_cuda else torch.ByteTensor
-
+    
     env = setup_env(args.env_name)
-    #env.seed(args.seed + rank)
+  
 
     model = ActorCritic(1, env.action_space.n)
     if args.use_cuda:
