@@ -28,9 +28,6 @@ prepro = lambda img: imresize(img[0:84].mean(2), (84,84)).astype(np.float32).res
 def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample=True):
 
     FloatTensor = torch.cuda.FloatTensor if args.use_cuda else torch.FloatTensor
-    DoubleTensor = torch.cuda.DoubleTensor if args.use_cuda else torch.DoubleTensor
-    ByteTensor = torch.cuda.ByteTensor if args.use_cuda else torch.ByteTensor
-
     env = setup_env(args.env_name)
     model = ActorCritic(1, env.action_space.n)
 
@@ -100,7 +97,6 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             done = done or episode_length >= args.max_episode_length
             reward = max(min(reward, 1), -1)
             
-            a_t= a_t.type(FloatTensor)
             #print (a_t)
             
             actions.append(a_t)
@@ -111,7 +107,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
                 (
                     Variable(s_t.unsqueeze(0)).type(FloatTensor),
                     Variable(s_t1.unsqueeze(0)).type(FloatTensor),
-                    a_t.type(FloatTensor)
+                    a_t
                 ),
                 icm = True
             )            
@@ -133,6 +129,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             state = torch.from_numpy(prepro(state))
             values.append(value)
             log_probs.append(log_prob)
+            reward.type(FloatTensor)
             rewards.append(reward)
             
             inverses.append(inverse)
