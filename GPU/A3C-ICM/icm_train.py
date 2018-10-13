@@ -13,7 +13,6 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-from action import ACTIONS
 
 
 def ensure_shared_grads(model, shared_model):
