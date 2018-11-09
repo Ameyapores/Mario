@@ -5,6 +5,6 @@ Pytorch Implemtation of Actor-Critic (A3C) and [curiosity driven exploration](ht
 The Mario environment used has been taken from [GymSuperMarioBros](https://github.com/Kautenja/gym-super-mario-bros) which runs on an NES emulator.
 
 ## Results
-For dense reward setting
+1) Dense reward setting
 
 <img src ="images/Figure_1.png" width="500" height="400">
