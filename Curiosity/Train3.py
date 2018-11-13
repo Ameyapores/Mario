@@ -8,7 +8,7 @@ from scipy.misc import imresize
 import numpy as np
 import cv2
 from itertools import count
-#from action import ACTIONS
+
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -50,7 +50,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
         if rank == 0:
 
             if num_iter % args.save_interval == 0 and num_iter > 0:
-                print ("Saving model at :" + args.save_path)            
+                #print ("Saving model at :" + args.save_path)            
                 torch.save(shared_model.state_dict(), args.save_path)
 
         if num_iter % (args.save_interval * 2.5) == 0 and num_iter > 0 and rank == 1:    # Second saver in-case first processes crashes 
@@ -71,10 +71,8 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
         for step in range(args.num_steps):
             episode_length += 1            
             state_inp = Variable(state.unsqueeze(0)).type(FloatTensor)
-            value, logit, (hx, cx) = model((state_inp, (hx, cx)), False)
-            s_t=copy.deepcopy(state)
-            #s_t= state
-            #print ('first state', s_t)
+            value, logit, (hx, cx) = model((state_inp, (hx, cx)), False)            
+            s_t= state
             prob = F.softmax(logit, dim=-1)
             log_prob = F.log_softmax(logit, dim=-1)
             entropy = -(log_prob * prob).sum(-1, keepdim=True)
@@ -100,23 +98,16 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             #print ('extrinsic reward', reward)
 
             state = torch.from_numpy(prepro(state))
-            #s_t1= state
-            s_t1 = copy.deepcopy(state)
-            #print (torch.eq(s_t, s_t1).all())
-            #print ('second state', s_t1)
+            s_t1= state
+
             vec_st1, inverse, forward = model((Variable(s_t.unsqueeze(0)).type(FloatTensor), Variable(s_t1.unsqueeze(0)).type(FloatTensor), a_t), True)
             reward_intrinsic = args.eta* ((vec_st1 - forward).pow(2)).sum(1) / 2.
             reward_intrinsic = reward_intrinsic.to(torch.device("cpu"))
             #print('intrinsic reward', reward_intrinsic)
-            reward += reward_intrinsic
-            #print('total_reward', reward)
             
-            #inverse = inverse.max(-1, keepdim=True)[1].data
-            #oh_inverse = torch.Tensor(1, env.action_space.n).type(LongTensor)
-            #oh_inverse.zero_()
-            #oh_inverse.scatter_(1,inverse,1)
-            #a_t_hat = oh_inverse.type(FloatTensor)
-            #print ('inverse', a_t_hat)
+            reward += reward_intrinsic
+            reward1= reward_intrinsic
+            #print('total_reward', reward)
             
             with lock:
                 counter.value += 1
@@ -127,8 +118,8 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
                 
             values.append(value)
             log_probs.append(log_prob)
-            reward= reward.type(FloatTensor)
-            rewards.append(reward)
+            reward1= reward1.type(FloatTensor)
+            rewards.append(reward1)
             forwards.append(forward)
             vec_st1s.append(vec_st1)
             inverses.append(inverse)
@@ -150,7 +141,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
         inverse_loss = 0
         R = Variable(R).type(FloatTensor)
         gae = torch.zeros(1, 1).type(FloatTensor)
-
+        #print (rewards)
         for i in reversed(range(len(rewards))):
             R = args.gamma * R + rewards[i]
             advantage = R - values[i]
@@ -166,17 +157,15 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             forward_err = forwards[i] - vec_st1s[i]
             forward_loss = forward_loss + 0.5 * (forward_err.pow(2)).sum(1)
 
-            cross_entropy = - (actions[i] * torch.log(inverses[i] + 1e-15)).sum(1)
-            #inverse_err  = actions[i]- inverses[i]
+            cross_entropy = - (actions[i] * torch.log(inverses[i] + 1e-15)).sum(1)            
             inverse_loss = inverse_loss + cross_entropy
-            #inverse_loss = inverse_loss + 0.5 * (inverse_err.pow(2)).sum(1)
+            
         
         #print ('forward loss', forward_loss)
         #print ('inverse loss', inverse_loss)
         #print ('other loss', (policy_loss + args.value_loss_coef * value_loss))
         optimizer.zero_grad()
 
-        #((1-args.beta) * inverse_loss + args.beta * forward_loss).backward(retain_graph=True)
         ((1-args.beta) * inverse_loss + args.beta * forward_loss).backward(retain_graph=True)
         (args.lmbda * (policy_loss + 0.5 * value_loss)).backward()
 
@@ -258,6 +247,6 @@ def test(rank, args, shared_model, counter):
             reward_sum = 0
             episode_length = 0
             actions.clear()
-            time.sleep(60)
+            time.sleep(180)
             state = prepro(env.reset())
         state = torch.from_numpy(prepro(state))
