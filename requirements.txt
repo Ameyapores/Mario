@@ -1,0 +1,9 @@
+opencv-python==3.4.3.18
+gym-super-mario-bros==5.0.0
+pandas==0.23.4
+numpy==1.15.4
+scikit-image==0.14.1
+torch==0.4.0
+scipy
+
+
