@@ -7,6 +7,9 @@ Pytorch Implemtation of Actor-Critic (A3C) and [curiosity driven exploration](ht
 - Python3.5+
 - PyTorch 0.4.0
 - OpenAI Gym ==0.10.8
+```
+pip3 install -r requirements.txt
+```
 
 ## Training
 First, create a folder (name it "save") in your workspace (os.path). In the save folder, create a .csv file for storing all the log (name it mario_curves.csv). Now you are good to go.
