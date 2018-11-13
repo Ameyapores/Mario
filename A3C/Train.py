@@ -24,15 +24,10 @@ def ensure_shared_grads(model, shared_model):
 prepro = lambda img: imresize(img[0:84].mean(2), (84,84)).astype(np.float32).reshape(1,84,84)/255.
 
 def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample=True):
-    #torch.manual_seed(args.seed + rank)
-    #print("Process No : {} | Sampling : {}".format(rank, select_sample))
 
     FloatTensor = torch.cuda.FloatTensor if args.use_cuda else torch.FloatTensor
-    DoubleTensor = torch.cuda.DoubleTensor if args.use_cuda else torch.DoubleTensor
-    ByteTensor = torch.cuda.ByteTensor if args.use_cuda else torch.ByteTensor
 
     env = setup_env(args.env_name)
-    #env.seed(args.seed + rank)
 
     model = ActorCritic(1, env.action_space.n)
 
@@ -52,7 +47,6 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
     for num_iter in count():
 
         if rank == 0:
-            #env.render()
 
             if num_iter % args.save_interval == 0 and num_iter > 0:
                 #print ("Saving model at :" + args.save_path)            
@@ -110,7 +104,7 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
             state = torch.from_numpy(prepro(state))
             values.append(value)
             log_probs.append(log_prob)
-            rewards.append(reward)
+            rewards.append(0.001* reward)
             
             if done:
                 break
@@ -140,8 +134,6 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
                 log_probs[i] * Variable(gae).type(FloatTensor) - args.entropy_coef * entropies[i]
 
         total_loss = policy_loss + args.value_loss_coef * value_loss
-        #print ("Process {} loss :".format(rank), total_loss.data)
-
         optimizer.zero_grad()
 
         (total_loss).backward(retain_graph=True)
@@ -149,10 +141,9 @@ def train(rank, args, shared_model, counter, lock, optimizer=None, select_sample
 
         ensure_shared_grads(model, shared_model)
         optimizer.step()
-    print ("Process {} closed.".format(rank))
+    
 
 def test(rank, args, shared_model, counter):
-    #torch.manual_seed(args.seed + rank)
 
     FloatTensor = torch.cuda.FloatTensor if args.use_cuda else torch.FloatTensor
 
@@ -207,6 +198,7 @@ def test(rank, args, shared_model, counter):
             done = True
 
         if done:
+
             print("Time {}, num steps {}, FPS {:.0f}, episode reward {}, episode length {}".format(
                 time.strftime("%Hh %Mm %Ss",
                               time.gmtime(time.time() - start_time)), 

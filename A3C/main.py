@@ -64,10 +64,8 @@ if __name__ == '__main__':
     shared_model.share_memory()
 
     if os.path.isfile(args.save_path):
-        #print('Loading A3C parametets ...')
+        print('Loading A3C parametets ...')
         shared_model.load_state_dict(torch.load(args.save_path))
-
-    #torch.manual_seed(args.seed)
 
     optimizer = SharedAdam(shared_model.parameters(), lr=args.lr)
     optimizer.share_memory()
