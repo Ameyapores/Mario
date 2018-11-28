@@ -14,6 +14,12 @@ pip3 install -r requirements.txt
 ## Training
 First, create a folder (name it "save") in your workspace (os.path). In the save folder, create a .csv file for storing all the log (name it mario_curves.csv). Now you are good to go.
 
+Clone the repository
+```
+git clone https://github.com/Ameyapores/Mario
+cd Mario
+```
+
 For Actor-critic (A3C), use the following command-
 ```
 python3 /A3C/main.py 
