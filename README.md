@@ -1,7 +1,7 @@
 # Mario
 Pytorch Implemtation of Actor-Critic (A3C) and [curiosity driven exploration](https://pathak22.github.io/noreward-rl/) for [SuperMarioBros](https://goo.gl/z8sK8b). Idea is to train agent with intrinsic curiosity-based motivation (ICM) when external rewards from environment are sparse. 
 
- <img src="images/mario1.gif" width="300"> 
+ <img src="images/mario-level1.gif" width="300"> 
  
 ## Prerequisites
 - Python3.5+
