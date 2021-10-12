@@ -1,4 +1,4 @@
-opencv-python==3.4.3.18
+opencv-python==3.4.7.28
 gym-super-mario-bros==5.0.0
 pandas==0.23.4
 numpy==1.15.4
